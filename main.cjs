@@ -1,3 +1,4 @@
+require('dotenv').config();
 const { app, BrowserWindow, dialog, ipcMain, globalShortcut, screen } = require('electron');
 const path = require("path");
 const fetch = require("node-fetch");
@@ -34,8 +35,7 @@ let isSecondaryCounterScreen = true;
 function createWebSocket() {
   const screenType = isSecondaryCounterScreen ? "SecondaryCounter" : "Counter";
 
-  // ws = new WebSocket('ws://test.eatstekltd.co.uk:8081');
-  ws = new WebSocket(`ws://test.eatstekltd.co.uk:8081?ScreenType=${screenType}`);
+   ws = new WebSocket(`ws://${process.env.VITE_API_BASE_URL}:8081?ScreenType=${screenType}`);
 
 
 

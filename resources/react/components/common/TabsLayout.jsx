@@ -22,6 +22,8 @@ const TabsLayout = () => {
     const [activeCategory, setActiveCategory] = useState("");
     const [openPopup, setOpenPopup] = useState(false);
     const [hasDeals, setHasDeals] = useState(false);
+
+    const restaurantName = import.meta.env.VITE_RESTAURANT_NAME;
     
 
     useEffect(() => {
@@ -161,7 +163,7 @@ const TabsLayout = () => {
                         fontWeight: '900',
                         color: '#111827',
                         letterSpacing: '1px'
-                    }}>Test Restaurant</span>
+                    }}>{restaurantName}</span>
                 </a>
                 
                 <nav style={{

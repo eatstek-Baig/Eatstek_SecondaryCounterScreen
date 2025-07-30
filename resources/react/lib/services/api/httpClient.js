@@ -7,7 +7,7 @@ const ErrorCodeMessages = {
 };
 
 // Define URLs
-export const LIVE_URL = "https://chb.eatstekltd.co.uk";
+export const LIVE_URL = `https://${import.meta.env.VITE_API_BASE_URL}`;
 
 export const createHttpClient = (useLocal = false) => {
   return axios.create({

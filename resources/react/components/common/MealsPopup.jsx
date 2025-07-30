@@ -21,7 +21,7 @@ const MealsPopup = ({ open, onClose, items, title, getMealId }) => {
             className="flex g-[10px] border border-gray-200 rounded-md p-2 mb-3 me-3 hover:bg-gray-200 transition-all cursor-pointer"
           >
             <img
-              src={`https://test.eatstekltd.co.uk/storage/${item.product_image}`}
+              src={`https://${import.meta.env.VITE_API_BASE_URL}/storage/${item.product_image}`}
               
               className="w-[70px] h-[70px]"
               alt={item.product_name}

@@ -1168,7 +1168,7 @@ const Checkout = () => {
                   <div className="table mx-auto">
                     <img
                       className="rounded-t-lg"
-                       src="https://chb.eatstekltd.co.uk/check_img.gif"
+                       src={`https://${import.meta.env.VITE_API_BASE_URL}/check_img.gif`}
                       
 
                       alt="Order Complete"

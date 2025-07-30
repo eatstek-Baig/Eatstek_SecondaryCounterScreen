@@ -43,18 +43,20 @@
       "allowToChangeInstallationDirectory": true,
       "shortcutName": "Counter Screen",
       "deleteAppDataOnUninstall": false,
-      "createDesktopShortcut": true, 
-      "createStartMenuShortcut": true, 
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
       "allowElevation": true,
       "include": "build/installer.nsh"
     },
-     "extraFiles": [
-    {
-      "from": "build/installer.nsh",
-      "to": ".",
-      "filter": ["**/*"]
-    }
-  ]
+    "extraFiles": [
+      {
+        "from": "build/installer.nsh",
+        "to": ".",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ]
   },
   "dependencies": {
     "@fortawesome/fontawesome-svg-core": "^6.7.2",
@@ -64,6 +66,7 @@
     "autoprefixer": "^10.4.20",
     "axios": "^1.7.7",
     "cookies-next": "^5.0.2",
+    "dotenv": "^17.2.1",
     "electron-squirrel-startup": "^1.0.1",
     "flowbite-react": "^0.10.2",
     "node-fetch": "^2.7.0",
