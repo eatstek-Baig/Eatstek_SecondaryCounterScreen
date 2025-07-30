@@ -8,6 +8,7 @@ import { LIVE_URL } from "../../lib/services/api/httpClient";
 import { useSGlobalContext } from "../../lib/contexts/useGlobalContext";
 import { showToast } from "../../lib/utils/helpers";
 import { ToastContainer } from "react-toastify";
+import { productApi } from "../../lib/services";
 
 export default function ProductDetails(props) {
   const { addItem } = useCart();
@@ -27,12 +28,56 @@ export default function ProductDetails(props) {
   const [popupTitle, setPopupTitle] = useState("");
   const [selectedSideItems, setSelectedSideItems] = useState("");
   const [selectedDrinkItems, setSelectedDrinkItems] = useState("");
+  const [inventoryData, setInventoryData] = useState(null);
 
-  // console.log("ProductDetails", product_detail)
-  // console.log("Choices", choices)
-  // console.log("SelectedChoice", selectedChoice)
-  // console.log("Choice_Options", choice_options)
-  // console.log("SelectedChoiceOption", selectedChoiceOption)
+  // Helper function to check if an item is in stock
+  const isItemInStock = (skuRef, optionRef = null) => {
+    // Check if inventoryData exists and is an array
+    if (!inventoryData || !Array.isArray(inventoryData)) {
+      return true; // Show if no inventory data or invalid data
+    }
+    
+    // Check by sku_ref first
+    if (skuRef) {
+      const skuItem = inventoryData.find(item => item && item.sku_ref === skuRef);
+      if (skuItem) {
+        return skuItem.stock === null || skuItem.stock === undefined || skuItem.stock > 0;
+      }
+    }
+    
+    // Check by option_ref if provided
+    if (optionRef) {
+      const optionItem = inventoryData.find(item => item && item.option_ref === optionRef);
+      if (optionItem) {
+        return optionItem.stock === null || optionItem.stock === undefined || optionItem.stock > 0;
+      }
+    }
+    
+    // If not found in inventory data, show it (assume available)
+    return true;
+  };
+
+  // Filter available sizes based on stock - FIXED: Removed name checking
+  const availableSizes = useMemo(() => {
+    if (!product_detail?.skus) return [];
+    
+    return product_detail.skus.filter(size => {
+      // Only check stock availability, not name presence
+      const skuRef = size.sku_ref || size.ref || size.hubrise_ref;
+      return isItemInStock(skuRef);
+    });
+  }, [product_detail, inventoryData]);
+
+  // Filter available choice options based on stock - FIXED: Only check stock
+  const availableChoiceOptions = useMemo(() => {
+    if (!choice_options) return [];
+    
+    return choice_options.filter(option => {
+      // Only check stock using option_ref
+      const optionRef = option.option_ref || option.ref || option.hubrise_ref;
+      return isItemInStock(null, optionRef);
+    });
+  }, [choice_options, inventoryData]);
 
   useEffect(() => {
     setProduct_detail(props?.product_detail)
@@ -41,131 +86,204 @@ export default function ProductDetails(props) {
   useEffect(() => {
     if (allData && allData.catalogs && allData.catalogs[0]?.data?.categories) {
       setData(allData);
-      // setLoading(false);
     }
   }, [allData]);
+
+  const fetchHubriseInventory = async () => {
+    try {
+      const response = await productApi.getHubriseStock();
+      console.log("Hubrise Inventory Response:", response);
+      
+      // Handle the nested data structure
+      if (response.data && response.data.success && Array.isArray(response.data.data)) {
+        setInventoryData(response.data.data);
+        console.log("Inventory data set:", response.data.data);
+      } else if (response.data && Array.isArray(response.data)) {
+        // Fallback if the structure is different
+        setInventoryData(response.data);
+      } else {
+        console.warn("Inventory data is not in expected format:", response);
+        setInventoryData([]);
+      }
+    } catch (error) {
+      console.error("Error fetching Hubrise inventory:", error);
+       showToast("Error fetching inventory data", "error");
+      setInventoryData([]); // Set empty array on error
+    }
+  };
+
+  useEffect(() => {
+    if (product_detail) {
+      fetchHubriseInventory();
+    }
+  }, [product_detail]);
 
   useEffect(() => {
     if (!product_detail) return;
 
-    if (!selectedSize && product_detail?.skus?.length > 0) {
-      setSelectedSize(product_detail.skus[0]);
+    // Use available sizes instead of all sizes
+    if (!selectedSize && availableSizes.length > 0) {
+      setSelectedSize(availableSizes[0]);
     }
+    
     const optionsListIds = selectedSize?.option_list_ids;
 
     if (Array.isArray(optionsListIds) && optionsListIds?.length > 0) {
-      const filteredData = data?.catalogs[0]?.data?.option_lists.filter(item => {
-        return item.hubrise_id && optionsListIds.includes(item.hubrise_id);
+      const orderMap = {};
+      optionsListIds.forEach((id, index) => {
+        orderMap[id] = index;
       });
+
+      const filteredData = data?.catalogs[0]?.data?.option_lists
+        .filter(item => {
+          return item.hubrise_id && optionsListIds.includes(item.hubrise_id);
+        })
+        .sort((a, b) => {
+          return orderMap[a.hubrise_id] - orderMap[b.hubrise_id];
+        });
+
       setChoices(filteredData || []);
     } else {
       setChoices([]);
       setChoice_options([]);
     }
+  }, [product_detail, selectedSize, selectedChoice, data, availableSizes]);
 
-  }, [product_detail, selectedSize, selectedChoice]);
+  // Updated useEffect to use available sizes
+  useEffect(() => {
+    if (!product_detail) return;
+
+    if (availableSizes.length > 0) {
+      const defaultSize = availableSizes[0];
+      setSelectedSize(defaultSize);
+
+      if (defaultSize?.option_list_ids?.length > 0) {
+        const orderMap = {};
+        defaultSize.option_list_ids.forEach((id, index) => {
+          orderMap[id] = index;
+        });
+
+        const filteredChoices = data?.catalogs[0]?.data?.option_lists
+          .filter(item => defaultSize.option_list_ids.includes(item.hubrise_id))
+          .sort((a, b) => orderMap[a.hubrise_id] - orderMap[b.hubrise_id]);
+
+        filteredChoices.forEach(choice => {
+          if (choice.min_selections === 1 && choice.options?.length > 0) {
+            // Find the first available option
+            const availableOption = choice.options.find(option => {
+              const optionRef = option.option_ref || option.ref || option.hubrise_ref;
+              return isItemInStock(null, optionRef);
+            });
+            
+            if (availableOption) {
+              setSelectedChoiceOption(prev => [
+                ...prev,
+                {
+                  ...availableOption,
+                  choice_name: choice.name
+                }
+              ]);
+            }
+          }
+        });
+
+        setChoices(filteredChoices);
+      }
+    }
+  }, [product_detail, data, inventoryData]);
 
   const handleSizeClick = (size) => {
     setSelectedSize(size);
-    // if (size?.option_list_ids?.length !== 0) {
-    setSelectedChoice("");
-    setChoices([]);
+    setSelectedChoice(null);
+    
+    if (size?.option_list_ids?.length > 0) {
+      const orderMap = {};
+      size.option_list_ids.forEach((id, index) => {
+        orderMap[id] = index;
+      });
+
+      const filteredChoices = data?.catalogs[0]?.data?.option_lists
+        .filter(item => size.option_list_ids.includes(item.hubrise_id))
+        .sort((a, b) => orderMap[a.hubrise_id] - orderMap[b.hubrise_id]);
+
+      setSelectedChoiceOption([]);
+      filteredChoices.forEach(choice => {
+        if (choice.min_selections === 1 && choice.options?.length > 0) {
+          // Find the first available option
+          const availableOption = choice.options.find(option => {
+            const optionRef = option.option_ref || option.ref || option.hubrise_ref;
+            return isItemInStock(null, optionRef);
+          });
+          
+          if (availableOption) {
+            setSelectedChoiceOption(prev => [
+              ...prev,
+              {
+                ...availableOption,
+                choice_name: choice.name
+              }
+            ]);
+          }
+        }
+      });
+
+      setChoices(filteredChoices);
+    } else {
+      setChoices([]);
+    }
     setChoice_options([]);
-    setSelectedChoiceOption([]);
-    // }
   };
 
   const handleChoiceClick = (choice) => {
     setSelectedChoice(choice);
-    setChoice_options(choice?.options?.map((option) => ({
+    
+    // Filter choice options based on stock - only check stock, not other properties
+    const filteredOptions = choice?.options?.filter(option => {
+      const optionRef = option.option_ref || option.ref || option.hubrise_ref;
+      return isItemInStock(null, optionRef);
+    }) || [];
+    
+    setChoice_options(filteredOptions.map((option) => ({
       ...option,
       min_selections: choice?.min_selections,
       max_selections: choice?.max_selections
-    }))
-      || []);
+    })));
   };
-
-  // const handleChoiceOptionClick = (option) => {
-  //   setSelectedChoiceOption((prev) => {
-  //     const choiceName = selectedChoice?.name;
-  //     const isSingleChoice = option.min_selections === 0 && option.max_selections === 1; // Only for this condition
-
-  //     const isAlreadySelected = prev.some((item) => item.id === option.id);
-
-  //     // Handle the case where only one option can be selected (min_selections = 0, max_selections = 1)
-  //     if (isSingleChoice) {
-  //       if (isAlreadySelected) {
-  //         // If the option is already selected, deselect it (unselect this option)
-  //         return prev.filter(item => item.id !== option.id);
-  //       }
-
-  //       // If no option is selected, or another option is selected, deselect the previous one and select this one
-  //       return [
-  //         {
-  //           ...option,
-  //           choice_name: choiceName,
-  //         },
-  //       ];
-  //     }
-
-  //     // Logic for other conditions (keep your previous behavior for these)
-  //     if (isAlreadySelected) {
-  //       return prev.filter((item) => item.id !== option.id);
-  //     }
-
-  //     return [
-  //       ...prev,
-  //       {
-  //         ...option,
-  //         choice_name: choiceName,
-  //       },
-  //     ];
-  //   });
-  // };
 
   const handleChoiceOptionClick = (option) => {
     setSelectedChoiceOption((prev) => {
       const choiceName = selectedChoice?.name;
       const isRequiredChoice = option.min_selections === 1 && option.max_selections === 1;
       const isSingleChoice = option.min_selections === 0 && option.max_selections === 1;
-  
+
       const isAlreadySelected = prev.some((item) => item.id === option.id);
-  
-      // 1. Handle REQUIRED choices (min=1, max=1)
+
       if (isRequiredChoice) {
-        // If already selected, deselect it
         if (isAlreadySelected) {
           return prev.filter((item) => item.id !== option.id);
         }
-        // If another option was selected for this choice, replace it
         const filteredPrev = prev.filter((item) => item.choice_name !== choiceName);
         return [...filteredPrev, { ...option, choice_name: choiceName }];
       }
-  
-      // 2. Handle SINGLE choices (min=0, max=1)
+
       if (isSingleChoice) {
         if (isAlreadySelected) {
           return prev.filter((item) => item.id !== option.id);
         }
-        // Deselect any other option for this choice
         const filteredPrev = prev.filter((item) => item.choice_name !== choiceName);
         return [...filteredPrev, { ...option, choice_name: choiceName }];
       }
-  
-      // 3. Handle MULTIPLE choices (min=0, max=N)
+
       if (isAlreadySelected) {
         return prev.filter((item) => item.id !== option.id);
       }
       return [...prev, { ...option, choice_name: choiceName }];
     });
   };
-  
+
   const computedTotalPrice = useMemo(() => {
     const sizePrice = selectedSize && selectedSize.price
       ? parseFloat(selectedSize.price.match(/\d+(\.\d+)?/)?.[0] || 0) : 0;
-
-    // const choiceOptionPrice = selectedChoiceOption && selectedChoiceOption.price
-    //   ? parseFloat(selectedChoiceOption.price.match(/\d+(\.\d+)?/)?.[0] || 0) : 0;
 
     const choiceOptionPrice = selectedChoiceOption?.reduce((total, option) => {
       return total + (parseFloat(option.price.match(/\d+(\.\d+)?/)?.[0] || 0));
@@ -179,13 +297,10 @@ export default function ProductDetails(props) {
   }, [computedTotalPrice]);
 
   const addToCart = () => {
-
-    // Get Required Choices
     const requiredChoices = choices.filter(choice =>
       choice.min_selections === 1 && choice.max_selections === 1
     );
 
-    // Check if at least One Option is selected From each Required Choice
     const isMissingRequiredOption = requiredChoices.some(choice =>
       !selectedChoiceOption.some(option => option.choice_name === choice.name)
     );
@@ -195,8 +310,39 @@ export default function ProductDetails(props) {
       return;
     }
 
-    const item =
-    {
+    // Check if selected items are still in stock before adding to cart
+    const selectedSizeRef = selectedSize?.sku_ref || selectedSize?.ref || selectedSize?.hubrise_ref;
+    if (!isItemInStock(selectedSizeRef)) {
+      showToast("Selected size is out of stock!", "error");
+      return;
+    }
+
+    for (const option of selectedChoiceOption) {
+      const optionRef = option.option_ref || option.ref || option.hubrise_ref;
+      if (!isItemInStock(null, optionRef)) {
+        showToast(`${option.name} is out of stock!`, "error");
+        return;
+      }
+    }
+
+    const allChoicesData = {
+      id: "combined_choices",
+      choice_name: "Combined Choices",
+      pivot: {
+        choice_id: "combined_choices",
+        product_id: product_detail?.id,
+      },
+      choice_options: selectedChoiceOption?.map(option => ({
+        id: option.id,
+        choice_id: option.choice_id || "combined_choices",
+        option_name: option.name,
+        price: (parseFloat((option.price || "").split(" ")[0])).toFixed(2),
+        status: 1,
+        choice_name: option?.choice_name,
+      })),
+    };
+
+    const item = {
       id: `${product_detail?.id}_${selectedSize?.id || ""}_${selectedChoiceOption?.map(option => option.id).join("_")}`,
       product_id: product_detail?.id,
       product_name: product_detail?.name,
@@ -207,39 +353,20 @@ export default function ProductDetails(props) {
       size: selectedSize?.name,
       choice: selectedChoice?.name,
       choiceOption: selectedChoiceOption?.map(option => option.name).join(", "),
-      choices: selectedChoice
-        ? [
-          {
-            id: selectedChoice.id,
-            choice_name: selectedChoice.name,
-            pivot: {
-              choice_id: selectedChoice.id,
-              product_id: product_detail?.id,
-            },
-            choice_options: selectedChoiceOption?.map(option => ({
-              id: option.id,
-              choice_id: selectedChoice.id,
-              option_name: option.name,
-              price: (parseFloat((option.price || "").split(" ")[0])).toFixed(2),
-              status: 1,
-              choice_name: option?.choice_name,
-            })),
-          },
-        ]
-        : [],
+      choices: selectedChoiceOption?.length > 0 ? [allChoicesData] : [],
       sizes: selectedSize
         ? [
-          {
-            id: selectedSize.id,
-            size_name: selectedSize.name,
-            pivot: {
-              product_id: selectedSize.product_id,
-              size_id: selectedSize.name,
-              product_price: (parseFloat((selectedSize.price || "").split(" ")[0])).toFixed(2)
+            {
+              id: selectedSize.id,
+              size_name: selectedSize.name,
+              pivot: {
+                product_id: selectedSize.product_id,
+                size_id: selectedSize.name,
+                product_price: (parseFloat((selectedSize.price || "").split(" ")[0])).toFixed(2)
+              },
+              status: 1,
             },
-            status: 1,
-          },
-        ]
+          ]
         : [],
       selectedSize: {
         id: selectedSize.id,
@@ -248,7 +375,6 @@ export default function ProductDetails(props) {
       },
     };
 
-    // Add item to Cart and show the Cart
     addItem(item, quantity);
     props.closeModal(false);
   };
@@ -293,7 +419,6 @@ export default function ProductDetails(props) {
       ) : (
         <>
           <div className="z-[2] grid grid-cols-1 lg:grid-cols-2 md:grid-cols-2 gap-[20px] md:gap-6 items-stretch w-full">
-                     
             <div className="p-4 flex items-center justify-center">
               <LazyLoadImage
                 className="rounded-t-lg"
@@ -307,12 +432,11 @@ export default function ProductDetails(props) {
             </div>
             <div className="p-4">
               <div className="p-5 pt-0">
-                 <h4 className="mb-2 text-2xl font-bold tracking-tight text-[#d97706] dark:text-white uppercase">
+                <h4 className="mb-2 text-2xl font-bold tracking-tight text-[#d97706] dark:text-white uppercase">
                   {product_detail?.name}
                 </h4>
 
                 <div className="text-xl font-bold">
-                  {" "}
                   <span className="text-black">
                     £ {selectedSize?.price}
                   </span>
@@ -322,7 +446,6 @@ export default function ProductDetails(props) {
                   {product_detail?.description}
                 </p>
 
-                {/* Tags */}
                 {product_detail?.tags?.length > 0 && (
                   <div className="mt-2 flex flex-wrap gap-2">
                     {product_detail.tags.map((tag, index) => (
@@ -333,28 +456,36 @@ export default function ProductDetails(props) {
                         {tag}
                       </span>
                     ))}
-                  </div>)} 
+                  </div>
+                )}
 
-                {product_detail?.skus?.some(size => size?.name) && (
+                {/* Show only available sizes - only if sizes have names */}
+                {availableSizes.length > 0 && availableSizes.some(size => size?.name) && (
                   <div className="mt-5">
                     <h5 className="text-lg mb-1">Sizes:</h5>
                     <div className="flex items-center gap-2 flex-wrap">
-                      {/* Render sizes only if they have valid names */}
-                      {product_detail?.skus.map((size) => (
-                        size?.name && (  // Only render valid sizes
-                          <button
-                            key={size?.id}
-                            onClick={() => handleSizeClick(size)}
-                            className={`min-w-[80px] items-center px-3 py-1 text-md font-medium text-center border border-[#d97706] rounded-lg capitalize ${selectedSize === size
-                              ? "bg-[#D97706] text-white"
-                              : "bg-white text-[#d97706]"
-                              } hover:text-white hover:bg-[#D97706]`}
-                          >
-                            {size?.name}
-                          </button>
-                        )
+                      {availableSizes
+                        .filter(size => size?.name) // Only show sizes with names
+                        .map((size) => (
+                        <button
+                          key={size?.id}
+                          onClick={() => handleSizeClick(size)}
+                          className={`min-w-[80px] items-center px-3 py-1 text-md font-medium text-center border border-[#d97706] rounded-lg capitalize ${selectedSize === size
+                            ? "bg-[#D97706] text-white"
+                            : "bg-white text-[#d97706]"
+                          } hover:text-white hover:bg-[#D97706]`}
+                        >
+                          {size?.name}
+                        </button>
                       ))}
                     </div>
+                  </div>
+                )}
+
+                {/* Show out of stock message if no sizes available - UPDATED condition */}
+                {availableSizes.length === 0 && product_detail?.skus?.length > 0 && (
+                  <div className="mt-5">
+                    <p className="text-red-600 font-semibold">This item is currently out of stock.</p>
                   </div>
                 )}
 
@@ -369,7 +500,7 @@ export default function ProductDetails(props) {
                           className={`min-w-[80px] items-center px-3 py-1 text-md font-medium text-center border border-[#d97706] rounded-lg ${selectedChoice?.id === choice?.id
                             ? "bg-[#D97706] text-white"
                             : "bg-white text-[#d97706]"
-                            } hover:text-white hover:bg-[#D97706]`}
+                          } hover:text-white hover:bg-[#D97706]`}
                         >
                           {choice?.name}
                         </button>
@@ -377,63 +508,34 @@ export default function ProductDetails(props) {
                     </div>
                   </div>
                 )}
-                {/* 
-                {choice_options?.length > 0 && (
-                  <div className="mt-4">
-                    <h5 className="text-lg mb-1">Choice Options: </h5>
-                    {choice_options.some(item => item.min_selections === 1 && item.max_selections === 1) &&
-                      !selectedChoiceOption.some(option => option.choice_name === selectedChoice?.name) && (
-                        <p className="text-red-600 text-sm font-semibold mb-2">
-                          Required, You must select one of these Options
-                        </p>
-                      )}
-                    <div className="flex items-center gap-2 flex-wrap">
-                      {choice_options?.map((item) => (
-                        <button
-                          key={item?.id}
-                          onClick={() => handleChoiceOptionClick(item)}
-                          className={`min-w-[80px] items-center px-3 py-1 text-md font-medium text-center border border-[#d97706] rounded-lg ${selectedChoiceOption?.some(option => option.id === item?.id)
-                            ? "bg-[#D97706] text-white" : "bg-white text-[#d97706]"} hover:text-white hover:bg-[#D97706]`}
-                        >
-                          <span>{item?.name} </span>
-                          <span className="text-sm font-semibold">
-                            {item?.price && parseFloat(item.price).toFixed(2) !== "0.00"
-                              ? `(£ ${parseFloat(item.price).toFixed(2)})`
-                              : ""}
-                          </span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )} */}
 
-                {choice_options?.length > 0 && (
+                {/* Show only available choice options */}
+                {availableChoiceOptions?.length > 0 && (
                   <div className="mt-4">
                     <h5 className="text-lg mb-1">Choice Options: </h5>
 
-                    {/* Show error if a REQUIRED choice (min_selections=1) is missing */}
-                    {choice_options.some(
+                    {availableChoiceOptions.some(
                       (item) =>
-                        item.min_selections === 1 &&  // Must select at least 1
-                        item.max_selections === 1 &&  // Cannot select more than 1
+                        item.min_selections === 1 &&
+                        item.max_selections === 1 &&
                         !selectedChoiceOption.some(
                           (option) => option.choice_name === selectedChoice?.name
                         )
                     ) && (
-                        <p className="text-red-600 text-sm font-semibold mb-2">
-                          Required: You must select one option from this choice.
-                        </p>
-                      )}
+                      <p className="text-red-600 text-sm font-semibold mb-2">
+                        Required: You must select one option from this choice.
+                      </p>
+                    )}
 
                     <div className="flex items-center gap-2 flex-wrap">
-                      {choice_options?.map((item) => (
+                      {availableChoiceOptions?.map((item) => (
                         <button
                           key={item?.id}
                           onClick={() => handleChoiceOptionClick(item)}
                           className={`min-w-[80px] items-center px-3 py-1 text-md font-medium text-center border border-[#d97706] rounded-lg ${selectedChoiceOption?.some(option => option.id === item?.id)
-                              ? "bg-[#D97706] text-white"
-                              : "bg-white text-[#d97706]"
-                            } hover:text-white hover:bg-[#D97706]`}
+                            ? "bg-[#D97706] text-white"
+                            : "bg-white text-[#d97706]"
+                          } hover:text-white hover:bg-[#D97706]`}
                         >
                           <span>{item?.name}</span>
                           {item?.price && parseFloat(item.price) !== 0 && (
@@ -451,10 +553,15 @@ export default function ProductDetails(props) {
                   <CounterBox quantity={quantity} setQuantity={setQuantity} />
 
                   <button
-                    onClick={addToCart} // Call AddToCart on Button Click
-                    className="px-4 py-2 w-full text-white bg-[#D97706] rounded-lg"
+                    onClick={addToCart}
+                    disabled={availableSizes.length === 0}
+                    className={`px-4 py-2 w-full text-white rounded-lg ${
+                      availableSizes.length === 0 
+                        ? "bg-gray-400 cursor-not-allowed" 
+                        : "bg-[#D97706] hover:bg-[#b8640a]"
+                    }`}
                   >
-                    ADD TO CART
+                    {availableSizes.length === 0 ? "OUT OF STOCK" : "ADD TO CART"}
                   </button>
                 </div>
 

@@ -5,6 +5,9 @@ import { ToastContainer } from 'react-toastify';
 import { CartProvider } from "react-use-cart";
 import { GlobalProvider } from './lib/contexts/useGlobalContext';
 import { WebSocketProvider } from './lib/providers/WebSocketProvider';
+// import { SubscriptionModal } from './components/common/SubscriptionAlert';
+//  import { SubscriptionBlock } from './components/common/SubscriptionBlock';
+
 
 function Main() {
 
@@ -14,6 +17,8 @@ function Main() {
                 <WebSocketProvider>
                     <ToastContainer />
                     <PublicRoutes />
+                    {/* <SubscriptionModal/> */}
+                    {/* <SubscriptionBlock /> */}
                 </WebSocketProvider>
             </GlobalProvider>
         </CartProvider>
@@ -21,3 +26,4 @@ function Main() {
 }
 
 export default Main;
+

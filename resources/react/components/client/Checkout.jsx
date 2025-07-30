@@ -21,12 +21,17 @@ import Keyboard from "react-simple-keyboard";
 import "react-simple-keyboard/build/css/index.css";
 import { FaKeyboard } from "react-icons/fa";
 
+
+
+
+
 const SplitPaymentModal = ({ total, onConfirm, onClose, printEnabled, setPrintEnabled }) => {
   const [cardAmount, setCardAmount] = useState(0);
   const [cashAmount, setCashAmount] = useState(Math.floor(total * 10) / 10);
   const [showKeyboard, setShowKeyboard] = useState(false);
   const keyboard = useRef();
   const currentInputRef = useRef(null);
+  const cashInputRef = useRef();
 
   const handleConfirm = () => {
     onConfirm(cardAmount, cashAmount);
@@ -40,7 +45,6 @@ const SplitPaymentModal = ({ total, onConfirm, onClose, printEnabled, setPrintEn
   const handleKeyboardChange = (input) => {
     if (currentInputRef.current) {
       const numericValue = parseFloat(input) || 0;
-      // Round DOWN to nearest 0.1 (10p)
       const flooredValue = Math.floor(Math.max(0, Math.min(total, numericValue)) * 10) / 10;
       setCashAmount(parseFloat(flooredValue.toFixed(2)));
     }
@@ -59,22 +63,22 @@ const SplitPaymentModal = ({ total, onConfirm, onClose, printEnabled, setPrintEn
   const incrementCash = () => {
     const newValue = Math.min(total, parseFloat((cashAmount + 0.1).toFixed(2)));
     setCashAmount(newValue);
+    setShowKeyboard(true); // Open keyboard when using buttons
   };
 
   const decrementCash = () => {
     const newValue = Math.max(0, parseFloat((cashAmount - 0.1).toFixed(2)));
     setCashAmount(newValue);
+    setShowKeyboard(true); // Open keyboard when using buttons
   };
 
   useEffect(() => {
     setCardAmount(parseFloat((total - cashAmount).toFixed(2)));
   }, [cashAmount, total]);
 
-  const cashInputRef = useRef();
-
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white p-6 rounded-lg w-full max-w-md">
+      <div className="bg-white p-6 rounded-lg w-full max-w-md relative">
         <h2 className="text-2xl font-bold mb-6 text-center">Split Payment</h2>
 
         <div className="mb-6">
@@ -82,7 +86,7 @@ const SplitPaymentModal = ({ total, onConfirm, onClose, printEnabled, setPrintEn
           <div className="flex items-center">
             <button
               onClick={decrementCash}
-              className="bg-gray-200 text-2xl px-4 py-3 rounded-l-lg active:bg-gray-300"
+              className="bg-gray-200 text-3xl px-6 py-4 rounded-l-lg active:bg-gray-300"
             >
               -
             </button>
@@ -101,24 +105,15 @@ const SplitPaymentModal = ({ total, onConfirm, onClose, printEnabled, setPrintEn
                   setCashAmount(parseFloat(flooredValue.toFixed(2)));
                 }}
                 onFocus={() => handleInputFocus(cashInputRef.current)}
-                className="w-full p-4 border-t border-b border-gray-300 text-center text-xl"
+                className="w-full p-2 border-t border-b border-gray-300 text-center text-lg"
               />
             </div>
             <button
               onClick={incrementCash}
-              className="bg-gray-200 text-2xl px-4 py-3 rounded-r-lg active:bg-gray-300"
+              className="bg-gray-200 text-3xl px-6 py-4 rounded-r-lg active:bg-gray-300"
             >
               +
             </button>
-          </div>
-          <div className="flex justify-end mt-1">
-            <FaKeyboard
-              className="text-gray-500 cursor-pointer hover:text-blue-500 text-xl"
-              onClick={() => {
-                cashInputRef.current.focus();
-                setShowKeyboard(!showKeyboard);
-              }}
-            />
           </div>
         </div>
 
@@ -128,7 +123,7 @@ const SplitPaymentModal = ({ total, onConfirm, onClose, printEnabled, setPrintEn
             type="text"
             disabled
             value={cardAmount.toFixed(2)}
-            className="w-full p-4 border rounded bg-gray-100 text-xl"
+            className="w-full p-2 border rounded bg-gray-100 text-lg"
           />
         </div>
 
@@ -159,11 +154,11 @@ const SplitPaymentModal = ({ total, onConfirm, onClose, printEnabled, setPrintEn
         </div>
       </div>
 
-      {/* Keyboard Modal */}
+      {/* Keyboard positioned to the right */}
       {showKeyboard && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
-          <div className="animate__animated animate__fadeInUp bg-white p-6 rounded-lg shadow-xl w-full max-w-md">
-            <div className="flex justify-between items-center mb-4">
+        <div className="fixed z-50 flex items-start" style={{ left: 'calc(50% + 220px)', top: '50%', transform: 'translateY(-50%)' }}>
+          <div className="animate__animated animate__fadeInRight bg-white p-4 rounded-lg shadow-xl w-full max-w-sm">
+            <div className="flex justify-between items-center mb-3">
               <span className="text-lg font-medium text-gray-700">
                 Enter Cash Amount
               </span>
@@ -209,6 +204,169 @@ const SplitPaymentModal = ({ total, onConfirm, onClose, printEnabled, setPrintEn
     </div>
   );
 };
+
+
+const CashPaymentModal = ({ total, onProceed, onClose }) => {
+  const [tenderAmount, setTenderAmount] = useState(0);
+  const [change, setChange] = useState(0);
+  const keyboard = useRef();
+  const [showKeyboard, setShowKeyboard] = useState(false);
+  const inputRef = useRef(null);
+
+  useEffect(() => {
+    if (tenderAmount > 0) {
+      const calculatedChange = parseFloat(tenderAmount) - parseFloat(total);
+      setChange(calculatedChange > 0 ? calculatedChange : 0);
+    } else {
+      setChange(0);
+    }
+  }, [tenderAmount, total]);
+
+  const handleKeyboardChange = (input) => {
+    const numericValue = parseFloat(input) || 0;
+    setTenderAmount(numericValue);
+  };
+
+  const handleKeyPress = (button) => {
+    if (button === "{enter}") {
+      setShowKeyboard(false);
+    }
+  };
+
+  const handleInputFocus = () => {
+    setShowKeyboard(true);
+  };
+
+  const handleProceed = () => {
+    // If no tender amount entered, use the total as tender amount
+    const finalTenderAmount = tenderAmount > 0 ? tenderAmount : total;
+    const calculatedChange = finalTenderAmount - total;
+    onProceed(finalTenderAmount, calculatedChange > 0 ? calculatedChange : 0);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white p-6 rounded-lg w-full max-w-md relative">
+        <h2 className="text-2xl font-bold mb-6 text-center">Cash Payment</h2>
+
+        <div className="mb-4">
+          <label className="block mb-2 text-lg font-medium">Total Bill (£)</label>
+          <input
+            type="text"
+            value={total.toFixed(2)}
+            disabled
+            className="w-full p-3 border rounded bg-gray-100 text-lg"
+          />
+        </div>
+
+        <div className="mb-4">
+          <label className="block mb-2 text-lg font-medium">Tender Amount (£)</label>
+          <input
+            type="number"
+            ref={inputRef}
+            value={tenderAmount.toFixed(2)}
+            onChange={(e) => setTenderAmount(parseFloat(e.target.value) || 0)}
+            onFocus={handleInputFocus}
+            className="w-full p-3 border rounded text-lg"
+          />
+        </div>
+
+        <div className="mb-6">
+          <label className="block mb-2 text-lg font-medium">Change (£)</label>
+          <input
+            type="text"
+            value={change.toFixed(2)}
+            disabled
+            className="w-full p-3 border rounded bg-gray-100 text-lg"
+          />
+        </div>
+
+        <div className="flex justify-between gap-4">
+          <button
+            onClick={onClose}
+            className="flex-1 px-6 py-3 bg-gray-300 rounded-lg text-lg"
+          >
+            Back
+          </button>
+          <button
+            onClick={handleProceed}
+            className="flex-1 px-6 py-3 bg-[#D97706] text-white rounded-lg text-lg"
+          >
+            Proceed
+          </button>
+        </div>
+      </div>
+
+      {showKeyboard && (
+        <div className="fixed z-50 flex items-start" style={{ left: 'calc(50% + 220px)', top: '50%', transform: 'translateY(-50%)' }}>
+          <div className="animate__animated animate__fadeInRight bg-white p-4 rounded-lg shadow-xl w-full max-w-md"> {/* Increased from max-w-sm to max-w-md */}
+            <div className="flex justify-between items-center mb-3">
+              <span className="text-lg font-medium text-gray-700">
+                Enter Amount
+              </span>
+              <button
+                onClick={() => setShowKeyboard(false)}
+                className="text-gray-500 hover:text-gray-700 text-2xl"
+              >
+                ×
+              </button>
+            </div>
+            <Keyboard
+              keyboardRef={r => (keyboard.current = r)}
+              onChange={handleKeyboardChange}
+              onKeyPress={handleKeyPress}
+              layout={{
+                default: [
+                  "1 2 3",
+                  "4 5 6",
+                  "7 8 9",
+                  "0 . {bksp}",
+                  "{enter}"
+                ]
+              }}
+              display={{
+                "{bksp}": "⌫",
+                "{enter}": "Done"
+              }}
+              theme="hg-theme-default hg-layout-numeric"
+              buttonTheme={[
+                {
+                  class: "hg-button-enter",
+                  buttons: "{enter}"
+                }
+              ]}
+              style={{
+                width: "100%",
+                backgroundColor: "#f9fafb",
+              }}
+              // Add these CSS class overrides for button sizing
+              physicalKeyboardHighlight={true}
+              // Custom CSS for wider buttons
+              buttonAttributes={[
+                {
+                  attribute: "style",
+                  value: "min-width: 60px; height: 50px; font-size: 18px; margin: 2px;",
+                  buttons: "1 2 3 4 5 6 7 8 9 0 ."
+                },
+                {
+                  attribute: "style",
+                  value: "min-width: 60px; height: 50px; font-size: 16px; margin: 2px;",
+                  buttons: "{bksp}"
+                },
+                {
+                  attribute: "style",
+                  value: "min-width: 130px; height: 50px; font-size: 16px; margin: 2px;",
+                  buttons: "{enter}"
+                }
+              ]}
+            />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 const Checkout = () => {
   const { toggleCheckoutFunction } = useSGlobalContext();
   const {
@@ -220,6 +378,7 @@ const Checkout = () => {
     cartTotal,
     emptyCart,
   } = useCart();
+  
   const [showSuccessMessage, setShowSuccessMessage] = useState(false);
   const [loadings, setLoadings] = useState(false);
   const [mac_address, setMac_address] = useState(null);
@@ -244,7 +403,9 @@ const Checkout = () => {
   const [showSplitModal, setShowSplitModal] = useState(false);
   const [splitAmounts, setSplitAmounts] = useState({ card: 0, cash: 0 });
 
-  //const [debugMode, setDebugMode] = useState(true); // Add this line
+  const [showCashModal, setShowCashModal] = useState(false);
+
+  // const [debugMode, setDebugMode] = useState(true); // Add this line
 
   const userName = import.meta.env.VITE_APP_KINETIC_API_USERNAME;
   const userPassword = import.meta.env.VITE_APP_KINETIC_API_PASSWORD;
@@ -301,6 +462,7 @@ const Checkout = () => {
 
 
   const handleCheckConnection = async (amount = null) => {
+
     console.log('[handleCheckConnection] Function started', { amount, mac_address, activeButtons, splitAmounts, discount, cartTotal });
     let toastShown = false;
     let loadingTimeout;
@@ -444,6 +606,9 @@ const Checkout = () => {
     await tryConnect();
     return cancelRequestFn;
   }
+
+
+
 
   useEffect(() => {
     getMacAddress();
@@ -636,6 +801,11 @@ const Checkout = () => {
 
     if (activeButtons.split) {
       // Split payment will be handled separately
+      return;
+    }
+
+    if (activeButtons.cash) {
+      setShowCashModal(true);
       return;
     }
 
@@ -926,9 +1096,29 @@ const Checkout = () => {
                   ))}
                 </ul>
               </div>
-
               {/* Order Summary Section */}
-              <div >
+              <div style={{
+                overflowY: 'auto',
+                maxHeight: 'calc(100vh - 200px)', // Adjust this value as needed
+                scrollbarWidth: 'thin', // For Firefox
+                scrollbarColor: '#D97706 #f5f5f5' // For Firefox (thumb color, track color)
+              }}>
+                {/* Webkit browsers (Chrome, Safari) scrollbar styling */}
+                <style dangerouslySetInnerHTML={{
+                  __html: `
+      div::-webkit-scrollbar {
+        width: 8px;
+      }
+      div::-webkit-scrollbar-track {
+        background: #f5f5f5;
+      }
+      div::-webkit-scrollbar-thumb {
+        background-color: #D97706;
+        border-radius: 4px;
+      }
+    `
+                }} />
+
                 <div className="bg-gray-100 p-6 rounded-lg shadow-lg">
                   <h2 className="text-xl font-semibold mb-3">Order Summary</h2>
                   <div className="flex justify-between mb-3">
@@ -947,10 +1137,7 @@ const Checkout = () => {
                       </span>
                     </div>
                   )}
-                  {/* <div className="flex justify-between font-bold text-xl mb-4">
-                    <span>Total : </span>
-                    <span>£{cartTotal.toFixed(2)}</span>
-                  </div> */}
+
                   <div className="flex justify-between font-bold text-xl mb-4 border-t pt-3">
                     <span>Total:</span>
                     <span>£{(discount ? discount.discountedTotal : cartTotal).toFixed(2)}</span>
@@ -981,7 +1168,8 @@ const Checkout = () => {
                   <div className="table mx-auto">
                     <img
                       className="rounded-t-lg"
-                      src="https://test.eatstekltd.co.uk/check_img.gif"
+                       src="https://chb.eatstekltd.co.uk/check_img.gif"
+                      
 
                       alt="Order Complete"
                     />
@@ -1064,6 +1252,29 @@ const Checkout = () => {
               }}
               printEnabled={activeButtons.print}
               setPrintEnabled={(value) => setActiveButtons(prev => ({ ...prev, print: value }))}
+            />
+          )}
+
+          {showCashModal && (
+            <CashPaymentModal
+              total={discount ? discount.discountedTotal : cartTotal}
+              onProceed={async (tenderAmount, change) => {
+                setShowCashModal(false);
+                await confirmCheckout(
+                  selectedOption,
+                  "cash",
+                  activeButtons.print,
+                  null,
+                  {
+                    tenderAmount,
+                    change
+                  }
+                );
+              }}
+              onClose={() => {
+                setShowCashModal(false);
+                setShowConfirmation(true); // Reopen options modal
+              }}
             />
           )}
 

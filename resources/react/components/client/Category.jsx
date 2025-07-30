@@ -48,7 +48,7 @@ export default function Category(props) {
                 } else {
                     // No products, check for deals with matching category_id
                     const categoryDeals = data?.catalogs[0]?.data?.deals?.filter(
-                        deal => deal.category_id === id.toString()
+                        deal => deal.category_id == id
                     ) || [];
                     
                     if (categoryDeals.length > 0) {

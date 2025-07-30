@@ -242,7 +242,7 @@ const TabsLayout = () => {
                                 borderRadius: '16px 8px 16px 8px'
                             }}
                         >
-                            DEALS
+                            ALL DEALS
                         </button>
                     )}
                     

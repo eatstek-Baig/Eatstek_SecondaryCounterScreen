@@ -7,8 +7,7 @@ import { FaCirclePlus } from "react-icons/fa6";
 import { showToast } from "../../lib/utils/helpers";
 import { LIVE_URL } from "../../lib/services/api/httpClient";
 import { ToastContainer } from "react-toastify";
-
-
+import { productApi } from "../../lib/services";
 
 export default function DealDetails(props) {
   const { addItem } = useCart();
@@ -22,6 +21,77 @@ export default function DealDetails(props) {
   const [selectedChoice, setSelectedChoice] = useState(null);
   const [choice_options, setChoice_options] = useState([]);
   const [selectedChoiceOption, setSelectedChoiceOption] = useState([]);
+  const [inventoryData, setInventoryData] = useState(null);
+
+  // Helper function to check if an item is in stock
+  const isItemInStock = (skuRef, optionRef = null) => {
+    // Check if inventoryData exists and is an array
+    if (!inventoryData || !Array.isArray(inventoryData)) {
+      return true; // Show if no inventory data or invalid data
+    }
+    
+    // Check by sku_ref first
+    if (skuRef) {
+      const skuItem = inventoryData.find(item => item && item.sku_ref === skuRef);
+      if (skuItem) {
+        return skuItem.stock === null || skuItem.stock === undefined || skuItem.stock > 0;
+      }
+    }
+    
+    // Check by option_ref if provided
+    if (optionRef) {
+      const optionItem = inventoryData.find(item => item && item.option_ref === optionRef);
+      if (optionItem) {
+        return optionItem.stock === null || optionItem.stock === undefined || optionItem.stock > 0;
+      }
+    }
+    
+    // If not found in inventory data, show it (assume available)
+    return true;
+  };
+
+  // Filter available choice options based on stock
+  const getAvailableChoiceOptions = (options) => {
+    if (!options) return [];
+    
+    return options.filter(option => {
+      const optionRef = option.option_ref || option.ref || option.hubrise_ref;
+      return isItemInStock(null, optionRef);
+    });
+  };
+
+  // Filter available SKUs based on stock
+  const getAvailableSKUs = (skus) => {
+    if (!skus) return [];
+    
+    return skus.filter(sku => {
+      const skuRef = sku.sku_ref || sku.ref || sku.hubrise_ref;
+      return isItemInStock(skuRef);
+    });
+  };
+
+  const fetchHubriseInventory = async () => {
+    try {
+      const response = await productApi.getHubriseStock();
+      console.log("Hubrise Inventory Response:", response);
+      
+      // Handle the nested data structure
+      if (response.data && response.data.success && Array.isArray(response.data.data)) {
+        setInventoryData(response.data.data);
+        console.log("Inventory data set:", response.data.data);
+      } else if (response.data && Array.isArray(response.data)) {
+        // Fallback if the structure is different
+        setInventoryData(response.data);
+      } else {
+        console.warn("Inventory data is not in expected format:", response);
+        setInventoryData([]);
+      }
+    } catch (error) {
+      console.error("Error fetching Hubrise inventory:", error);
+      showToast("Error fetching inventory data", "error");
+      setInventoryData([]); // Set empty array on error
+    }
+  };
 
   const [dealItems, setDealItems] = useState(() => {
     const selectedDeal = props.selected_deal?.item;
@@ -33,8 +103,7 @@ export default function DealDetails(props) {
     };
 
     return {
-      // id: `${selectedDeal?.id}_}=_=12539ujg'_=')}`,
-      id: `${selectedDeal?.id}_${generateUniqueId()}`, // Use the simple ID generator
+      id: `${selectedDeal?.id}_${generateUniqueId()}`,
       name: selectedDeal?.name,
       image: selectedDeal?.image_data[0],
       sprice: (parseFloat(totalPrice) / quantity).toFixed(2),
@@ -61,94 +130,82 @@ export default function DealDetails(props) {
         skus: category.skus
       })) || []
     };
-
   });
 
   console.log("Data", dealItems);
 
-  // useEffect(() => {
-  //   const updatedSelectedProducts = props.selected_deal?.lines?.map((category) => {
-  //     const matchingCategory = props.selected_deal?.lines?.find(
-  //       (item) => item.id === category.id
-  //     );
-
-  //     if (matchingCategory?.skus?.length > 0) {
-  //       const validProducts = matchingCategory.skus.filter(sku =>
-  //         !sku.sku_options || sku.sku_options.length === 0
-  //       );
-
-  //       if (validProducts.length > 0) {
-  //         const firstProduct = validProducts[0];
-
-  //         return {
-  //           category_id: category.id,
-  //           category_name: category.label,
-  //           quantity: 0,
-  //           selected_products: [
-  //             {
-  //               product_name: firstProduct?.sku_product_name,
-  //               pid: firstProduct?.id,
-  //               category_id: firstProduct?.deal_line_id,
-  //               sku_id: firstProduct.sku_id,
-  //               sku_options: firstProduct?.sku_options
-  //             },
-  //           ],
-  //         };
-  //       }
-  //     }
-
-  //     // Ensure Default Object
-  //     return {
-  //       category_id: category.id,
-  //       category_name: category.label,
-  //       quantity: 0,
-  //       selected_products: [{
-  //         product_name: null,
-  //         pid: null,
-  //         category_id: category.id,
-  //         sku_id: null,
-  //         sku_options: [],
-  //       }],
-  //     };
-  //   });
-
-  //   setDealItems((prev) => ({
-  //     ...prev,
-  //     selectedProducts: updatedSelectedProducts,
-  //   }));
-
-  // }, [props.selected_deal]);
+  // Fetch inventory when component mounts
+  useEffect(() => {
+    if (props.selected_deal) {
+      fetchHubriseInventory();
+    }
+  }, [props.selected_deal]);
 
   useEffect(() => {
-    const updatedSelectedProducts = props.selected_deal?.lines?.map((category) => {
-      const matchingCategory = props.selected_deal?.lines?.find(
+    if (!props.selected_deal?.lines || !props.allData?.catalogs?.[0]?.data?.option_lists) return;
+
+    const updatedSelectedProducts = props.selected_deal.lines.map((category) => {
+      const matchingCategory = props.selected_deal.lines.find(
         (item) => item.id === category.id
       );
-  
+
+      // Filter available SKUs first
+      const availableSKUs = getAvailableSKUs(matchingCategory?.skus || []);
+
       // Auto-select if only 1 valid product exists in the category
-      if (matchingCategory?.skus?.length === 1) {
-        const singleProduct = matchingCategory.skus[0];
+      if (availableSKUs.length === 1) {
+        const singleProduct = availableSKUs[0];
+        
+        // Get filtered choices for this product
+        const orderMap = {};
+        singleProduct.sku_options?.forEach((id, index) => {
+          orderMap[id] = index;
+        });
+
+        const filteredChoices = props?.allData?.catalogs[0]?.data?.option_lists
+          .filter(item => singleProduct.sku_options?.includes(item.hubrise_id))
+          .sort((a, b) => orderMap[a.hubrise_id] - orderMap[b.hubrise_id])
+          .map(choice => ({
+            ...choice,
+            options: getAvailableChoiceOptions(choice.options || [])
+          }))
+          .filter(choice => choice.options.length > 0); // Only keep choices that have available options
+
+        // Auto-select default choices (required choices with min_selections = 1)
+        const defaultChoices = [];
+        filteredChoices.forEach(choice => {
+          if (choice.min_selections === 1 && choice.options?.length > 0) {
+            const defaultOption = choice.options[0];
+            defaultChoices.push({
+              ...defaultOption,
+              choice_name: choice.name,
+              sku_id: singleProduct.sku_id
+            });
+          }
+        });
+
         return {
           category_id: category.id,
           category_name: category.label,
-          quantity: 1, // Auto-set quantity to 1
+          quantity: 1,
           selected_products: [{
             product_name: singleProduct.sku_product_name,
             pid: singleProduct.id,
             category_id: singleProduct.deal_line_id,
             sku_id: singleProduct.sku_id,
             sku_options: singleProduct.sku_options || [],
-            data_options: singleProduct.data_options || [], // Include if needed
+            data_options: filteredChoices || [],
+            choices: defaultChoices,
           }],
         };
       }
-  
-      // Default behavior for multiple products/empty categories
-      if (matchingCategory?.skus?.length > 0) {
-        const validProducts = matchingCategory.skus.filter(sku =>
+
+      // Handle multiple products - select first valid product and set defaults
+      if (availableSKUs.length > 0) {
+        const validProducts = availableSKUs.filter(sku =>
           !sku.sku_options || sku.sku_options.length === 0
         );
-  
+
         if (validProducts.length > 0) {
           const firstProduct = validProducts[0];
           return {
@@ -161,12 +218,13 @@ export default function DealDetails(props) {
               category_id: firstProduct?.deal_line_id,
               sku_id: firstProduct.sku_id,
               sku_options: firstProduct?.sku_options || [],
+              choices: [],
             }],
           };
         }
       }
-  
-      // Fallback: Empty selection
+
+      // Fallback: Empty selection (no available SKUs)
       return {
         category_id: category.id,
         category_name: category.label,
@@ -177,16 +235,17 @@ export default function DealDetails(props) {
           category_id: category.id,
           sku_id: null,
           sku_options: [],
+          choices: [],
         }],
       };
     });
-  
+
     setDealItems((prev) => ({
       ...prev,
       selectedProducts: updatedSelectedProducts,
     }));
-  }, [props.selected_deal]);
-  
+  }, [props.selected_deal, props.allData, inventoryData]);
+
   useEffect(() => {
     const allOptions = dealItems?.selectedProducts
       .flatMap(option => option.selected_products)
@@ -198,31 +257,41 @@ export default function DealDetails(props) {
   const [activeChoiceProduct, setActiveChoiceProduct] = useState(null);
 
   const handleChoiceClick = (choice, productId) => {
-    console.log(choice)
     // Check if the choice is "Make it a Meal" or "Make it a Meal (FC)"
     if (choice?.name === "Make it a Meal" || choice?.name === "Make it a Meal (FC)") {
-      choice.min_selections = 0;  // Change min_selections to 0 for these specific choices
+      choice.min_selections = 0;
     }
 
     // Check if the same choice is already selected
-    if (selectedChoice?.id === choice.id) {
+    if (selectedChoice?.id === choice.id && activeChoiceProduct === productId) {
       setSelectedChoice(null);
       setChoice_options([]);
     } else {
       setActiveChoiceProduct(productId);
       setSelectedChoice(choice);
-      setChoice_options(
-        choice?.options?.map((option) => ({
-          ...option,
-          min_selections: choice?.min_selections,
-          max_selections: choice?.max_selections,
-        })) || []
-      );
+      
+      // Filter and sort options based on stock availability
+      const availableOptions = getAvailableChoiceOptions(choice?.options || []);
+      const sortedOptions = availableOptions.sort((a, b) => {
+        return (a.order || 0) - (b.order || 0);
+      }).map((option) => ({
+        ...option,
+        min_selections: choice?.min_selections,
+        max_selections: choice?.max_selections,
+      }));
+
+      setChoice_options(sortedOptions);
     }
   };
 
-
   const handleChoiceOptionClick = (option, sku_id) => {
+    // Check if the option is still in stock before allowing selection
+    const optionRef = option.option_ref || option.ref || option.hubrise_ref;
+    if (!isItemInStock(null, optionRef)) {
+      showToast(`${option.name} is out of stock!`, "error");
+      return;
+    }
+
     setSelectedChoiceOption((prev) => {
       const choiceName = selectedChoice?.name;
       const isRequiredChoice = option.min_selections === 1 && option.max_selections === 1;
@@ -234,7 +303,6 @@ export default function DealDetails(props) {
             const isAlreadySelected = currentChoices?.some((item) => item.id === option.id);
 
             if (isRequiredChoice) {
-              // Replace choice if Required
               const filteredChoices = currentChoices?.filter(
                 (item) => item.choice_name !== choiceName
               );
@@ -247,7 +315,6 @@ export default function DealDetails(props) {
                   { ...option, choice_name: choiceName, sku_id }],
               };
             } else {
-              // Allow Multiple selections for Optional choices
               return {
                 ...selected,
                 choices: isAlreadySelected
@@ -282,20 +349,18 @@ export default function DealDetails(props) {
   };
 
   useEffect(() => {
-    // Check if dealItems and selectedProducts exist
     if (dealItems?.selectedProducts) {
-      // Loop through selectedProducts and filter out "Make it a Meal" and "Make it a Meal (FC)"
       const filteredChoices = dealItems.selectedProducts
-        .flatMap((product) => product.selected_products)  // Flatten selected products
-        .flatMap((selectedProduct) => selectedProduct.data_options || [])  // Flatten data_options
+        .flatMap((product) => product.selected_products)
+        .flatMap((selectedProduct) => selectedProduct.data_options || [])
         .filter(
           (choice) =>
             choice?.name !== "Make it a Meal" && choice?.name !== "Make it a Meal (FC)"
-        );  // Filter out the unwanted choices
+        );
 
-      setChoices(filteredChoices);  // Set the filtered choices to the state
+      setChoices(filteredChoices);
     }
-  }, [dealItems?.selectedProducts]);  // Run the effect when dealItems.selectedProducts changes
+  }, [dealItems?.selectedProducts]);
 
   const computedTotalPrice = useMemo(() => {
     setDealItems((prev) => ({
@@ -323,7 +388,10 @@ export default function DealDetails(props) {
     const getProducts = props.selected_deal?.lines?.find(
       (item) => item.id === id
     );
-    setFromProducts(getProducts?.skus);
+    
+    // Filter products based on stock availability
+    const availableProducts = getAvailableSKUs(getProducts?.skus || []);
+    setFromProducts(availableProducts);
     setOpenPopup(true);
     setChoices([]);
     setSelectedChoice("");
@@ -331,24 +399,59 @@ export default function DealDetails(props) {
   };
 
   const addToCart = () => {
-
     if (!validateSelectedProducts()) {
       showToast("Please select Products from all Categories", "error");
       return;
     }
 
-    // Get Required Choices 
-    const requiredChoices = choices?.filter(choice =>
-      choice.min_selections === 1 && choice.max_selections === 1
-    );
+    // Check if selected products are still in stock
+    const outOfStockProducts = dealItems.selectedProducts.some(category => {
+      return category.selected_products.some(product => {
+        if (!product.sku_id) return false;
+        
+        // Check if the main product is in stock
+        const skuRef = product.sku_ref || product.ref || product.hubrise_ref;
+        if (!isItemInStock(skuRef)) {
+          showToast(`${product.product_name} is out of stock!`, "error");
+          return true;
+        }
 
-    // Check if at least One Option is selected From each Required Choice
-    const isMissingRequiredOption = requiredChoices?.some(choice =>
-      !selectedChoiceOption.some(option => option.choice_name === choice.name)
-    );
+        // Check if selected choices are in stock
+        return (product.choices || []).some(choice => {
+          const optionRef = choice.option_ref || choice.ref || choice.hubrise_ref;
+          if (!isItemInStock(null, optionRef)) {
+            showToast(`${choice.name} is out of stock!`, "error");
+            return true;
+          }
+          return false;
+        });
+      });
+    });
 
-    if (isMissingRequiredOption) {
-      showToast("Please select at least one Option from the Required Choices!", "error");
+    if (outOfStockProducts) {
+      return;
+    }
+
+    const missingRequiredChoices = dealItems.selectedProducts.some(category => {
+      return category.selected_products.some(product => {
+        if (!product.data_options) return false;
+        
+        const requiredChoices = product.data_options.filter(
+          choice => choice.min_selections === 1 && choice.max_selections === 1
+        );
+
+        return requiredChoices.some(requiredChoice => {
+          const selectedOptions = (product.choices || []).filter(
+            option => option.choice_name === requiredChoice.name
+          );
+          
+          return selectedOptions.length === 0;
+        });
+      });
+    });
+
+    if (missingRequiredChoices) {
+      showToast("Please select all required options for each product", "error");
       return;
     }
 
@@ -356,7 +459,7 @@ export default function DealDetails(props) {
       ...dealItems,
       tprice: computedTotalPrice.toFixed(2),
       sprice: computedTotalPrice.toFixed(2),
-      price: computedTotalPrice.toFixed(2)
+      price: (computedTotalPrice / quantity).toFixed(2),
     };
 
     addItem(updatedDealItems, quantity);
@@ -374,9 +477,40 @@ export default function DealDetails(props) {
   const getDealData = (data) => {
     setOpenPopup(false);
     console.log(data);
-    const filteredChoices = props?.allData?.catalogs[0]?.data?.option_lists.filter(item =>
-      data?.sku_options?.includes(item.hubrise_id)
-    );
+    
+    // Check if the selected product is still in stock
+    const skuRef = data.sku_ref || data.ref || data.hubrise_ref;
+    if (!isItemInStock(skuRef)) {
+      showToast(`${data.product_name} is out of stock!`, "error");
+      return;
+    }
+    
+    const orderMap = {};
+    data?.sku_options?.forEach((id, index) => {
+      orderMap[id] = index;
+    });
+
+    const filteredChoices = props?.allData?.catalogs[0]?.data?.option_lists
+      .filter(item => data?.sku_options?.includes(item.hubrise_id))
+      .sort((a, b) => orderMap[a.hubrise_id] - orderMap[b.hubrise_id])
+      .map(choice => ({
+        ...choice,
+        options: getAvailableChoiceOptions(choice.options || [])
+      }))
+      .filter(choice => choice.options.length > 0);
+
+    const defaultChoices = [];
+    filteredChoices.forEach(choice => {
+      if (choice.min_selections === 1 && choice.options?.length > 0) {
+        const defaultOption = choice.options[0];
+        defaultChoices.push({
+          ...defaultOption,
+          choice_name: choice.name,
+          sku_id: data.sku_id
+        });
+      }
+    });
+
     const updatedSelectedProducts = dealItems.selectedProducts.map(
       (product) => {
         if (product.category_id === data.category_id) {
@@ -388,7 +522,7 @@ export default function DealDetails(props) {
               category_id: data.category_id,
               sku_id: data.sku_id,
               sku_options: data?.sku_options,
-              choices: [],
+              choices: defaultChoices,
               data_options: filteredChoices || [],
             };
           } else {
@@ -398,7 +532,7 @@ export default function DealDetails(props) {
               category_id: data.category_id,
               sku_id: data.sku_id,
               sku_options: data?.sku_options,
-              choices: [],
+              choices: defaultChoices,
               data_options: filteredChoices || [],
             });
           }
@@ -410,6 +544,12 @@ export default function DealDetails(props) {
         return product;
       }
     );
+
+    const newChoiceOptions = updatedSelectedProducts
+      .flatMap(product => product.selected_products)
+      .flatMap(p => p.choices || []);
+    
+    setSelectedChoiceOption(newChoiceOptions);
 
     setDealItems((prev) => ({
       ...prev,
@@ -440,36 +580,24 @@ export default function DealDetails(props) {
               {dealItems?.name}
             </h4>
             <div className="text-xl font-bold mb-2">
-              {" "}
               <span className="text-black">£ {dealItems?.tprice}</span>
             </div>
             {dealItems?.description && (
               <p className="text-black mb-3">{dealItems?.description}</p>
             )}
-            {/* Tags */}
 
             {dealItems?.tags?.length > 0 && (
-
               <div className="mt-2 flex flex-wrap gap-2">
-
                 {dealItems.tags.map((tag, index) => (
-
                   <span
-
                     key={index}
-
                     className="inline-block bg-[#d97706] text-white text-xs font-semibold px-3 py-1 rounded-full uppercase"
-
                   >
-
                     {tag}
-
                   </span>
-
                 ))}
-
-              </div>)}
-
+              </div>
+            )}
 
             {dealItems?.selectedProducts?.length > 0 && (
               <>
@@ -478,24 +606,37 @@ export default function DealDetails(props) {
                 </h5>
                 <div className="flex gap-3 flex-col">
                   {dealItems?.selectedProducts?.map((item, index) => {
+                    // Check if this category has any available products
+                    const categoryProducts = props.selected_deal?.lines?.find(
+                      (line) => line.id === item.category_id
+                    );
+                    const hasAvailableProducts = getAvailableSKUs(categoryProducts?.skus || []).length > 0;
+
                     return (
                       <div key={index} className="block">
                         <h6 className="text-md mb-1 font-bold">
                           {item?.category_name}
+                          {!hasAvailableProducts && (
+                            <span className="text-red-600 text-sm font-normal ml-2">
+                              (Out of Stock)
+                            </span>
+                          )}
                         </h6>
                         {item?.selected_products.map((itembox, i) => {
                           return itembox?.product_name ? (
                             <>
                               <div
                                 key={i}
-                                onClick={() =>
-                                  handleData(
-                                    item?.category_id,
-                                    item?.category_name,
-                                    i
-                                  )
-                                }
-                                className="cursor-pointer mb-1 text-gray-600 hover:underline hover:text-blue-700 transition-all"
+                                onClick={() => hasAvailableProducts && handleData(
+                                  item?.category_id,
+                                  item?.category_name,
+                                  i
+                                )}
+                                className={`mb-1 transition-all ${
+                                  hasAvailableProducts 
+                                    ? "cursor-pointer text-gray-600 hover:underline hover:text-blue-700" 
+                                    : "cursor-not-allowed text-gray-400"
+                                }`}
                               >
                                 {itembox?.product_name}{" "}
                               </div>
@@ -513,18 +654,31 @@ export default function DealDetails(props) {
                                           const lowerName = choice?.name?.toLowerCase();
                                           return lowerName !== "make it a meal" && lowerName !== "make it a meal (fc)";
                                         })
-                                        .map((choice) => (
-                                          <button
-                                            key={choice?.id}
-                                            onClick={() => handleChoiceClick(choice, itembox?.pid)}
-                                            className={`min-w-[80px] items-center px-3 py-1 text-md font-medium text-center border border-[#d97706] rounded-lg ${selectedChoice?.id === choice?.id && activeChoiceProduct === itembox?.pid
-                                                ? "bg-[#D97706] text-white"
-                                                : "bg-white text-[#d97706]"
-                                              } hover:text-white hover:bg-[#D97706]`}
-                                          >
-                                            {choice?.name}
-                                          </button>
-                                        ))}
+                                        .map((choice) => {
+                                          // Check if choice has any available options
+                                          const availableOptions = getAvailableChoiceOptions(choice.options || []);
+                                          const hasAvailableOptions = availableOptions.length > 0;
+                                          
+                                          return (
+                                            <button
+                                              key={choice?.id}
+                                              onClick={() => hasAvailableOptions && handleChoiceClick(choice, itembox?.pid)}
+                                              disabled={!hasAvailableOptions}
+                                              className={`min-w-[80px] items-center px-3 py-1 text-md font-medium text-center border border-[#d97706] rounded-lg ${
+                                                !hasAvailableOptions
+                                                  ? "bg-gray-200 text-gray-400 cursor-not-allowed border-gray-300"
+                                                  : selectedChoice?.id === choice?.id && activeChoiceProduct === itembox?.pid
+                                                    ? "bg-[#D97706] text-white"
+                                                    : "bg-white text-[#d97706] hover:text-white hover:bg-[#D97706]"
+                                              }`}
+                                            >
+                                              {choice?.name}
+                                              {!hasAvailableOptions && (
+                                                <span className="text-xs block">(Out of Stock)</span>
+                                              )}
+                                            </button>
+                                          );
+                                        })}
                                     </div>
                                   </div>
                                 )
@@ -577,14 +731,17 @@ export default function DealDetails(props) {
                           ) : (
                             <button
                               key={i}
-                              onClick={() =>
-                                handleData(
-                                  item?.category_id,
-                                  item?.category_name,
-                                  i
-                                )
-                              }
-                              className={`min-w-auto h-[35px] mb-1 flex gap-3 items-center px-3 py-1 text-md font-medium text-center border border-[#d97706] rounded-lg hover:text-white hover:bg-[#D97706] bg-white text-[#d97706]`}
+                              onClick={() => hasAvailableProducts && handleData(
+                                item?.category_id,
+                                item?.category_name,
+                                i
+                              )}
+                              disabled={!hasAvailableProducts}
+                              className={`min-w-auto h-[35px] mb-1 flex gap-3 items-center px-3 py-1 text-md font-medium text-center border border-[#d97706] rounded-lg ${
+                                hasAvailableProducts
+                                  ? "hover:text-white hover:bg-[#D97706] bg-white text-[#d97706]"
+                                  : "bg-gray-200 text-gray-400 cursor-not-allowed border-gray-300"
+                              }`}
                             >
                               <FaCirclePlus /> {item?.category_name} Item{" "}
                               {i + 1}
@@ -606,7 +763,7 @@ export default function DealDetails(props) {
               >
                 ADD TO CART
               </button>
-            </div>
+            </div>        
 
             <div className="text-xl font-bold mt-6">
               <span className="text-[#d97706]">Sub total</span> : £ {totalPrice}

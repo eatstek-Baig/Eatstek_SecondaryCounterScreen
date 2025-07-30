@@ -122,6 +122,48 @@ function ProductService() {
       });
     },
 
+    //CRUD api routes for hubrise items stock
+        getHubriseStock: () => {
+            return httpClient.get(`/api/hubrise/inventory`, {
+                headers: {
+                    Authorization: `Bearer ${JSON.parse(localStorage.getItem("token"))}`,
+                },
+            });
+        },
+        storeHubriseStock: () => {
+            return httpClient.post(`/api/hubrise/inventory`, {
+                headers: {
+                    Authorization: `Bearer ${JSON.parse(localStorage.getItem("token"))}`,
+                },
+            });
+        },
+        updateHubriseStock: (values) => {
+            return httpClient.patch(`/api/hubrise/inventory`, values, {
+                headers: {
+                    Authorization: `Bearer ${JSON.parse(localStorage.getItem("token"))}`,
+                },
+            });
+        },
+
+                skuRefList: () => {
+            return httpClient.get(`/api/list-Sku-Refs`, {
+                headers: {
+                    Authorization: `Bearer ${JSON.parse(
+                        localStorage.getItem("token")
+                    )}`,
+                },
+            });
+        },
+        optionRefList: () => {
+            return httpClient.get(`/api/list-Option-Refs`, {
+                headers: {
+                    Authorization: `Bearer ${JSON.parse(
+                        localStorage.getItem("token")
+                    )}`,
+                },
+            });
+        },
+
     checkFinanceTabPermission: () => {
       const token = localStorage.getItem("Token");
       return httpClient.get(`/api/permission/check/finance`, {
